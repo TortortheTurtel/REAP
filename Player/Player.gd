@@ -138,7 +138,8 @@ func _on_JumpBuffer_timeout():
 	
 	can_gallop_jump = false
 
-
+#make this increase up to a point to smooth out pushing power
+const PUSH = 500
 
 func move(delta):
 	
@@ -167,7 +168,15 @@ func move(delta):
 	
 	velocity = velocity.move_toward( Vector2.ZERO , passive_friction * friction_factor)
 	
-	velocity = move_and_slide(velocity, Vector2.ZERO)
+#	velocity = move_and_slide(velocity, Vector2.ZERO)
+	velocity = move_and_slide(velocity, Vector2.ZERO, false, 4, 0.785398, false)
+	
+	for i in get_slide_count():
+		var collision = get_slide_collision(i)
+#		print("Collided with: ", collision.collider.name)
+		if collision.collider is MoveableBlock:
+			collision.collider.apply_central_impulse(-collision.normal * PUSH)
+
 	# print(str(velocity.distance_to(Vector2.ZERO)))
 	# use this code to manually check what walking max walking speed is, this will be used for detect_break_boost()
 
@@ -319,6 +328,7 @@ func aim_release():
 	#make camera return to normal
 
 func _unhandled_input(event):
+	#put more of the things into here
 	#if Input.is_action_pressed("jump"):
 	#	place_state = AIRBOURNE
 	#if Input.is_action_just_released("jump"):

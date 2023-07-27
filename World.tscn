@@ -1,5 +1,6 @@
-[gd_scene load_steps=67 format=2]
+[gd_scene load_steps=68 format=2]
 
+[ext_resource path="res://nodes/movable bloc/Moveable Block.tscn" type="PackedScene" id=1]
 [ext_resource path="res://Player/Player.tscn" type="PackedScene" id=2]
 [ext_resource path="res://Asset/REAP tileset 2.png" type="Texture" id=3]
 
@@ -940,3 +941,9 @@ tile_data = PoolIntArray( -655346, 0, 8, -655345, 0, 10, -655344, 0, 10, -655343
 
 [node name="Heightmap" type="TileMap" parent="Tiles"]
 format = 1
+
+[node name="MoveableBlock" parent="." instance=ExtResource( 1 )]
+position = Vector2( 283, 24 )
+
+[node name="MoveableBlock2" parent="." instance=ExtResource( 1 )]
+position = Vector2( 386, 57 )

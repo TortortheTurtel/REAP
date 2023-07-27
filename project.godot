@@ -8,6 +8,16 @@
 
 config_version=4
 
+_global_script_classes=[ {
+"base": "RigidBody2D",
+"class": "MoveableBlock",
+"language": "GDScript",
+"path": "res://nodes/movable bloc/Moveable Block.gd"
+} ]
+_global_script_class_icons={
+"MoveableBlock": ""
+}
+
 [application]
 
 config/name="Reap"
@@ -101,6 +111,7 @@ use={
 [physics]
 
 common/enable_pause_aware_picking=true
+2d/default_gravity_vector=Vector2( 0, 0 )
 
 [rendering]
 
