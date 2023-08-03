@@ -1,28 +1,12 @@
 extends KinematicBody2D
 
-var CHAR_FORCE = 0
-var char_force_max = 3700
-#delta adjusted already
-var char_force_per_frame = 1000
-const CHAR_MASS = .5
-const WORLD_FRICTION = 100
-var char_friction_factor = 1
-
-#this value is manually obtained by going to the move(delta) func, read instructions there
-var vel_max = 300
 
 
-const passive_friction =  70
-const ground_friction = 5
-var friction_factor = 1
-
-var velocity = Vector2.ZERO
-var acceleration = 0
-var drag_coeffecient = 0
 
 
 #in liquid will not be included for simplicity sake
 var place_state = GROUNDED
+
 enum {
 	GROUNDED,
 	AIRBOURNE
@@ -30,7 +14,10 @@ enum {
 
 var cam_state = LOOKING
 onready var camera = $Camera2D
-onready var CrossHair = $Camera2D/crosshair
+onready var crossHair = $Camera2D/crosshair
+onready var collisionshape = $CollisionShape2D
+onready var label = $Label
+
 var player_selected_zoom = Vector2(1,1)
 export var DEFAULT_CAMERA_Y_POSITION = -250
 export var DEFAULT_CROSSHAIR_SCALE = Vector2(0.1,0.1)
@@ -39,7 +26,7 @@ enum{
 	LOOKING,
 	AIMMING
 }
-onready var label = $Label
+
 func _ready():
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	#Engine.set_target_fps(15) #in the future, disable camera smoothing at low fps values
@@ -48,42 +35,42 @@ func _ready():
 
 func _physics_process(delta):
 	velocity_magnitude = velocity.distance_to(Vector2.ZERO)
-#	print(get_local_mouse_position())
+	#will be optimizing this in the future so that certain codes only present under certain conditions
 	detect_brake_boost()
-	sudden_input_change_factor()
+	sudden_input_change()
 	inputvector()
 	wishdir(input_vector)
 	upDown_physics(delta)
-	#print(velocity_magnitude)
 	match place_state:
 		GROUNDED:
-			friction_factor = 1 #this will  be dependent on area in the future
+			character_traction = 1 #this will  be dependent on area in the future
 			move(delta)
 		AIRBOURNE:
-			friction_factor = 0.001
+			character_traction = 0.001
 			air_move(delta)
 
-export var jump_height = 80.0
-export var jump_peak_time = 0.72/2 #default 0.36/2
+#will be changing this in the future to have have gravity be consistent with character and game measurements
+export var JUMP_HEIGHT    = 80.0
+export var JUMP_PEAK_TIME = 0.72/2 #default 0.36/2
 
-onready var jump_velocity = (2*jump_height) / jump_peak_time
-onready var GRAVITY       = (-2.0 *jump_height) / (jump_peak_time * jump_peak_time)
+onready var jump_velocity = (2*JUMP_HEIGHT) / JUMP_PEAK_TIME
+#this will be changed in the future to use value as actual gravity
+onready var GRAVITY       = (-2.0 *JUMP_HEIGHT) / (JUMP_PEAK_TIME * JUMP_PEAK_TIME)
 
 var wish_to_brake = true
 #move this to a lower position in the future
-var player_z_pos = 0
+var player_z_pos  = 0
 var player_height = 80
-var floor_z_pos = 0 #this will be dependent on area in the future
+var floor_z_pos   = 0 #this will be dependent on area in the future
 
-var z_velocity = 0
+var z_velocity     = 0
 var z_acceleration = 0
-var jump_force = 0
-var step_size = 20 
+var jump_force     = 0
+var step_size      = 20 
 onready var JumpBuffer = get_node("Node2D/JumpBuffer")
 
 func upDown_physics(delta):
 #	#air friction already handled in Match place_state
-	#currently disabled for debugging purposes
 	player_z_pos += z_velocity * delta + (0.5*GRAVITY*delta*delta)
 	player_z_pos = clamp(player_z_pos, floor_z_pos, 100000)
 	if player_z_pos > floor_z_pos: 
@@ -98,19 +85,16 @@ func upDown_physics(delta):
 	if place_state == GROUNDED:
 		z_velocity = 0
 	
-	#z_velocity += (jump_force / CHAR_MASS) * delta 
 	
 	
 	# this will have to be done in a dif place, deffo
-	# maybe it should be based more on player sprite rather than player_z_pos, welp, time to do school stuff
-	# camera codesss (no im not gonna put this into a function)
+	# maybe it should be based more on player sprite rather than player_z_pos
 	get_node("Sprite").scale = Vector2(1,1) * (1+ (0.005 * (player_z_pos))) # have this min to zero in the future, for falling fx
 	camera.zoom = player_selected_zoom * (1+ (0.005 * (player_z_pos))) # have this move up down to make sure that player is always same pos relative to camera
-	CrossHair.scale = camera.zoom * DEFAULT_CROSSHAIR_SCALE
+	crossHair.scale = camera.zoom * DEFAULT_CROSSHAIR_SCALE
 	if cam_state != AIMMING:
 		camera.position.y = camera.zoom.y * DEFAULT_CAMERA_Y_POSITION
 	
-	#more responsive and simpler way of jumping, but it doesnt allow for big jump
 	#maybe make it so that jumping dependent on current velocity? the faster the player currently is the lower their jump??
 	# i dunno, seems kinda counter intuitive, but its the only hope for galloping to exist lol
 	# currently jumping feels too short and quick, which works for galloping, but not for normal jumping
@@ -121,138 +105,161 @@ func upDown_physics(delta):
 		if can_gallop_jump == false:
 			z_velocity = jump_velocity 
 	
-	if Input.is_action_just_released("jump") and can_gallop_jump == true:
+	if Input.is_action_just_released("jump") and can_gallop_jump == true and place_state == GROUNDED:
 		z_velocity = jump_velocity * 0.5
-			
-	
-	
-	#this is here for debugging purposes
-#	if Input.is_action_pressed("jump"):
-#		player_z_pos = 30
-#	if Input.is_action_just_released("jump"):
-#		player_z_pos = 0
 
 var can_gallop_jump = false
 
 func _on_JumpBuffer_timeout():
-	
 	can_gallop_jump = false
 
-#make this increase up to a point to smooth out pushing power
-const PUSH = 500
+
+
+#SI UNITS: cm s^-1
+export var TOP_WALKING_SPEED = 420
+#SI UNITS: s
+export var TIME_TO_TOP_WALKING_SPEED = 0.2
+
+#still under development this one
+var top_gallop_speed_to_walking_ratio = 3.5
+var time_to_top_gallop_speed = 4
+
+var char_force = Vector2.ZERO
+#this will determine the char's max speed
+#SI UNITS: kg m s^-2 * 100cm m^-1
+onready var char_force_max = TOP_WALKING_SPEED * ((GRAVITY_HORIZONTAL * GROUND_FRICTION_COEFFICIENT) + (AIR_DRAG_COEFFECIENT * TOP_WALKING_SPEED * TOP_WALKING_SPEED))
+#SI UNITS: char_force_max s^-1
+onready var char_force_per_second = char_force_max / (TIME_TO_TOP_WALKING_SPEED)
+# this is in kilograms, 1 godot unit = 1 cm
+export var CHAR_MASS = 100
+#SI UNITS: cms^ -2
+export var GRAVITY_HORIZONTAL = 980.665
+#this will be dependent on the tile
+#this will be removed
+
+#dependent on the location
+export var GROUND_FRICTION_COEFFICIENT = 0.9
+onready var ground_friction_force = GROUND_FRICTION_COEFFICIENT * CHAR_MASS * GRAVITY_HORIZONTAL
+
+#dependent on the character's state. ei airbourne, jordans got crinkled, etc. etc., amount of friction from ground that can be used
+#0.88 for average, 0.33 for EX when he is facing forward
+var character_traction = 1
+
+#will be implementing 
+export var AIR_DRAG_COEFFECIENT = 0.00001
+
+onready var air_resistance_force = 0 
+
+var velocity = Vector2.ZERO
+var acceleration = Vector2.ZERO
+var Ground_friction_force = Vector2.ZERO
+
+#make this be impulse to be applied on the object being colllided with
+onready var horizontal_momentum = velocity * CHAR_MASS
 
 func move(delta):
-	
-	#i should probably turn this into a function
+	#I should probably turn this into a function
 	if input_vector != Vector2.ZERO:
-		
-		#the third value on the clamp determines max_force (subtract by speed to make it be truly reflective of max_speed
-		CHAR_FORCE = clamp(CHAR_FORCE,0, char_force_max - char_force_per_frame) * sudden_input_change_factor()
-		#this is the speed at which the character accelerates, better make a a var for the in the future
-		CHAR_FORCE += char_force_per_frame * delta * 60
+		char_force = char_force.move_toward(char_force_max * wishDirection, char_force_per_second * delta) * sudden_input_change_factor
 	else:
-		CHAR_FORCE = 0
+		char_force = Vector2.ZERO
 	
-	#this is some physics stuff, i dont understand it anymore lol
-	drag_coeffecient = ground_friction * velocity.distance_to(Vector2.ZERO) * friction_factor #this will make is to that acceleration doesnt get out of hand 
-	acceleration = (CHAR_FORCE - drag_coeffecient) / CHAR_MASS #can reach negative values, so make sure to clamp
+	print(char_force)
 	
-	#brake boosting stuff
+	air_resistance_force = AIR_DRAG_COEFFECIENT * velocity * velocity * velocity 
+	Ground_friction_force = ground_friction_force * velocity * 0.01
+	acceleration = ((char_force * character_traction ) - Ground_friction_force - air_resistance_force)/ CHAR_MASS #my magnum opos
+	
+	
 	if can_brakeboost == true and wish_to_brake == true:
 		velocity = -(velocity * .2) + brake_boost_power
 	else:
-		velocity += wishDirection * clamp(acceleration, 0, 10000000) * delta
-	
-	
+		velocity += acceleration * delta
 	wish_to_brake = true
 	
-	velocity = velocity.move_toward( Vector2.ZERO , passive_friction * friction_factor)
 	
-#	velocity = move_and_slide(velocity, Vector2.ZERO)
-	velocity = move_and_slide(velocity, Vector2.ZERO, false, 4, 0.785398, false)
+	
 	
 	for i in get_slide_count():
 		var collision = get_slide_collision(i)
-#		print("Collided with: ", collision.collider.name)
+		horizontal_momentum = velocity * CHAR_MASS
+#		print(str(prev_tick_velocity) +"aAAAA")
 		if collision.collider is MoveableBlock:
-			collision.collider.apply_central_impulse(-collision.normal * PUSH)
-
-	# print(str(velocity.distance_to(Vector2.ZERO)))
-	# use this code to manually check what walking max walking speed is, this will be used for detect_break_boost()
+			#have this set the char force temporarily to zero, but kill it all on the next frame
+			impulse = 2 * collision.collider.mass * (collision.collider.get_linear_velocity() - prev_tick_velocity) / (CHAR_MASS + collision.collider.mass)
+				
+			collision.collider.apply_impulse(position - (collisionshape.shape.radius * collision.normal) - collision.collider.position,  -impulse +(acceleration * CHAR_MASS * delta))
+			
+			
+			
+			# this is to reduce the impact of kinetic to rigid collision wherein the kinetic body just stops moving
+#			print (str(velocity) + "BBBB")
+			
+			
+#			velocity -= (collision.normal / collision.collider.mass)
+	
+	
+	prev_tick_velocity = velocity
+	velocity = move_and_slide(velocity, Vector2.ZERO, false, 4, PI/4, false)
+var impulse = 0
+var prev_tick_velocity = 0
 
 #instructions at https://www.desmos.com/calculator/9eavursizr
-export var air_control_factor = 0.01 #how much of the velocity the player can control per frame
-export var air_control_speed_loss_export = 1 # only applies when turning, not all the time. only affects % of velocity lost from clipping
-onready var air_control_speed_loss = air_control_speed_loss_export 
+export var AIR_CONTROL_FACTOR = 0.01 #how much % of the velocity the player can control per tick
+export var AIR_CONTROL_SPEED_LOSS = 1 # only applies when turning, not all the time. only affects % of velocity lost from clipping
 
 var velocity_magnitude = 0
 var air_control_ellipse = Vector2.ZERO
 var air_control_ellipse_rotated = Vector2.ZERO
 
-
-
 func air_move(delta):
 	#friction factor here is set to something else at physics
-	CHAR_FORCE = 0
-	drag_coeffecient = ground_friction * velocity.distance_to(Vector2.ZERO) * friction_factor
-	acceleration = (CHAR_FORCE - drag_coeffecient) / CHAR_MASS
-	velocity += velocity.normalized() * clamp(acceleration, 0, 10000000) * delta
-	velocity = velocity.move_toward( Vector2.ZERO , passive_friction * delta * friction_factor * 60)
+	char_force = Vector2.ZERO
+	air_resistance_force = AIR_DRAG_COEFFECIENT * velocity * velocity * velocity
+	acceleration = ((char_force * wishDirection * character_traction ) - air_resistance_force)/ CHAR_MASS
 	
-	#i should probably turn this into a function
-#	if input_vector != Vector2.ZERO:
-#
-#		#the third value on the clamp determines max_force (subtract by speed to make it be truly reflective of max_speed
-#		CHAR_FORCE = clamp(CHAR_FORCE,0, char_force_max - char_force_per_frame) * sudden_input_change_factor()
-#		#this is the speed at which the character accelerates, better make a a var for the in the future
-#		#CHAR_FORCE += char_force_per_frame * delta * 60
-#	else:
-#		CHAR_FORCE = 0
+	velocity += velocity.normalized() * acceleration * delta
 	
 	if input_vector != Vector2.ZERO:
 		#this will only be updated here since this is the only place that currently uses it
 		
-		velocity *= (1-air_control_factor)# clip velocity to be added again later
+		velocity *= (1-AIR_CONTROL_FACTOR)# clip velocity to be added again later
 		
 		#an ellipse that is the same size as the velocity lost from clipping, and whose width is the furthest point it can touch the circle
+		#instructions at https://www.desmos.com/calculator/9eavursizr
+		#will be restructured to use less velocity maggitudes and sin cos shit, still no idea how to use it rn tho
 		var wish_direction_air_control = wishDirection.angle() - velocity.angle()
-		air_control_ellipse.x = air_control_factor * velocity_magnitude * cos(wish_direction_air_control)
-		air_control_ellipse.y = air_control_speed_loss  * sin(wish_direction_air_control ) *  sqrt(pow(velocity_magnitude,2) - pow((velocity_magnitude * ( 1-air_control_factor ) ),2))
-		
+		air_control_ellipse.x = AIR_CONTROL_FACTOR * velocity_magnitude * cos(wish_direction_air_control)
+		air_control_ellipse.y = AIR_CONTROL_SPEED_LOSS  * sin(wish_direction_air_control ) *  sqrt(pow(velocity_magnitude,2) - pow((velocity_magnitude * ( 1-AIR_CONTROL_FACTOR ) ),2))
 		
 		if air_control_ellipse.distance_to(Vector2.ZERO) <= 8:
 			air_control_ellipse.x = 8 * cos(wish_direction_air_control)
 			air_control_ellipse.y = 8 * sin(wish_direction_air_control)
 		
-		
 		velocity += air_control_ellipse.rotated( velocity.angle())
-	
-	
-	
 	
 	#print(str(velocity.distance_to(Vector2.ZERO)))
 	
 	velocity = move_and_slide(velocity, Vector2.ZERO)
 
+var sudden_input_change_factor = 1
 
-func sudden_input_change_factor():
+func sudden_input_change():
 	if velocity != Vector2.ZERO:
-		#may get called several times lol, dont turn it into a function
-		#gets dot product, and makes it be a float between 0-1
-		var sudden_input_change_factor = (((velocity.normalized().dot(wishDirection) + 1))) * .5
-		return sudden_input_change_factor
+		#this is used to reset the char_force back to zero depending the on the input that was put into the thing
+		sudden_input_change_factor = (velocity.normalized().dot(wishDirection) + 1) * .5
 	else:
-		return 1
+		sudden_input_change_factor = 1
 
 var brake_boost_power = Vector2.ZERO
 var can_brakeboost = false
+#% of velocity that player needs to be at before being able to gallop
+export var GALLOP_DETECT_FACTOR = 0.6
 
 func detect_brake_boost():
-	# The first value I got from getting the highest walking velocity, multiplying by .6, then squaring
-	#get the highest walking velocity by allowing the #print at move, then recording the highest number in debug
-	# second number is the allowance of direction shift, higher number the move allowance, max of 1, will not be user adjustable value
 	
-	if velocity.distance_squared_to(Vector2.ZERO) > 36864 and sudden_input_change_factor() < 0.45:
+	# will be changed in the future to not use magnitude
+	if velocity_magnitude > (TOP_WALKING_SPEED * GALLOP_DETECT_FACTOR) and sudden_input_change_factor < 0.45:# this  number is the allowance of direction shift, higher number the more allowance, max of 1, will not be user adjustable value
 		brake_boost_power = wishDirection * 800
 		can_gallop_jump = true
 		can_brakeboost = true
@@ -291,22 +298,14 @@ func y_input():
 var  wishDirection = Vector2.ZERO
 
 func wishdir(vector2):
-	
-	
 	wishDirection = Vector2.ZERO
 	if vector2 != Vector2.ZERO:
+		# the value this gives is already normalized, nice!
 		wishDirection = Vector2(cos(rotation + vector2.angle()), sin(rotation + vector2.angle()))
-		
-	
-	#this is already normalized, turns out
 
 func look(event):
 	if event is InputEventMouseMotion:
-		#this is how looking is handled
 		rotation += event.relative.x * 0.002 #this float is meant to represent sensitivity, prob make a value for that in tha future
-		#print(event.relative.y) #maybe make it so that inputs less than |30| dont get accepted
-#		if abs(event.relative.y) <= 10:
-#			event.relative.y = 0
 		player_selected_zoom += Vector2(1,1) * ( (0.002 * (-event.relative.y)))# zoom in an out based on up down movement of mouse
 
 func aim(event):

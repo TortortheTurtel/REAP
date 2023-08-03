@@ -944,6 +944,3 @@ format = 1
 
 [node name="MoveableBlock" parent="." instance=ExtResource( 1 )]
 position = Vector2( 283, 24 )
-
-[node name="MoveableBlock2" parent="." instance=ExtResource( 1 )]
-position = Vector2( 386, 57 )
