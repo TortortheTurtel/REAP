@@ -83,6 +83,21 @@ func _unhandled_input(event):
 	#	place_state = AIRBOURNE
 	#if Input.is_action_just_released("jump"):
 	#	place_state = GROUNDED
+	
+	#maybe make it so that jumping dependent on current velocity? the faster the player currently is the lower their jump??
+	# i dunno, seems kinda counter intuitive, but its the only hope for galloping to exist lol
+	# currently jumping feels too short and quick, which works for galloping, but not for normal jumping
+	# detect when player is brakedash, to perform a gallopjump, default jump always the same no matter what speed
+	# add a bit of delay when brake dash
+	if Input.is_action_just_pressed("jump") and place_state == GROUNDED:
+		
+		if can_gallop_jump == false:
+			z_velocity = jump_velocity 
+	
+	if Input.is_action_just_released("jump") and can_gallop_jump == true and place_state == GROUNDED:
+		z_velocity = jump_velocity * 0.5
+	
+	
 	wish_to_brake = false
 	input_vector.x = ceil(Input.get_action_strength("ui_right")) - ceil(Input.get_action_strength("ui_left"))
 	input_vector.y = ceil(Input.get_action_strength("ui_down")) - ceil(Input.get_action_strength("ui_up"))
@@ -112,15 +127,9 @@ func _unhandled_input(event):
 			wish_to_brake = true
 		prevInput_vector.y = input_vector.y
 	
-	print(str(input_sum) +" "+  str(input_vector))
-	
-	#this is to prevent braking when the input conflict is resolved by releasing one of the respective inputs
-	if (input_conflict.x == 1 or input_conflict.y == 1) or (prevInput_conflict.x == 1 or prevInput_conflict.y == 1): 
-		wish_to_brake = false
+	print(input_vector)
 	
 	
-	
-	prevInput_conflict = input_conflict
 	
 	if Input.is_action_just_pressed("aim"):
 		cam_state = AIMMING
@@ -202,23 +211,14 @@ func upDown_physics(delta):
 	if cam_state != AIMMING:
 		camera.position.y = camera.zoom.y * DEFAULT_CAMERA_Y_POSITION
 	
-	#maybe make it so that jumping dependent on current velocity? the faster the player currently is the lower their jump??
-	# i dunno, seems kinda counter intuitive, but its the only hope for galloping to exist lol
-	# currently jumping feels too short and quick, which works for galloping, but not for normal jumping
-	# detect when player is brakedash, to perform a gallopjump, default jump always the same no matter what speed
-	# add a bit of delay when brake dash
-	if Input.is_action_just_pressed("jump") and place_state == GROUNDED:
-		
-		if can_gallop_jump == false:
-			z_velocity = jump_velocity 
 	
-	if Input.is_action_just_released("jump") and can_gallop_jump == true and place_state == GROUNDED:
-		z_velocity = jump_velocity * 0.5
 
 var can_gallop_jump = false
 
 func _on_JumpBuffer_timeout():
 	can_gallop_jump = false
+
+
 
 func move(delta):
 	if input_vector != Vector2.ZERO:
@@ -237,7 +237,7 @@ func move(delta):
 #	#BRAKE BOOST
 	if can_brakeboost and wish_to_brake:
 		velocity = -(velocity * .2) + brake_boost_power + (acceleration * delta)
-		print("A")
+		print( "A")
 	else:
 		velocity += acceleration * delta
 	
@@ -298,16 +298,21 @@ func air_move(delta):
 var sudden_input_change_factor = 1
 
 func sudden_input_change():
-	if velocity != Vector2.ZERO:
-		#this is used to reset the char_force back to zero depending the on the input that was put into the thing
-		sudden_input_change_factor = (velocity.normalized().dot(wishDirection) + 1) * .5
+	if velocity_magnitude >= 1:
+		
+		#this is used to reset the char_force back to zero depending on how different the input is from the current velocity
+		# currently not working
+		sudden_input_change_factor = (velocity.normalized().dot(wishDirection) + 1) * 0.5
+		
 	else:
 		sudden_input_change_factor = 1
 
 var brake_boost_power = Vector2.ZERO
 var can_brakeboost = false
 #  % of velocity that player needs to be at before being able to gallop
+# will be lowered by a lot when in air
 export var GALLOP_DETECT_FACTOR = 0.4
+
 
 func detect_brake_boost():
 	
