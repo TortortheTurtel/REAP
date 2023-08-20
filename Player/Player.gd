@@ -22,6 +22,45 @@ var player_selected_zoom = Vector2(1,1)
 export var DEFAULT_CAMERA_Y_POSITION = -250
 export var DEFAULT_CROSSHAIR_SCALE = Vector2(0.1,0.1)
 
+#SI UNITS: cm s^-1
+export var TOP_WALKING_SPEED = 420
+#SI UNITS: s
+export var TIME_TO_TOP_WALKING_SPEED = 0.1
+
+#still under development this one
+var top_gallop_speed_to_walking_ratio = 3.5
+var time_to_top_gallop_speed = 4
+
+var char_force = Vector2.ZERO
+#this will determine the char's max speed
+#SI UNITS: kg m s^-2 * 100cm m^-1
+onready var char_force_max = TOP_WALKING_SPEED * ((GRAVITY_HORIZONTAL * GROUND_FRICTION_COEFFICIENT) + (AIR_DRAG_COEFFECIENT * TOP_WALKING_SPEED * TOP_WALKING_SPEED))
+#SI UNITS: char_force_max s^-1
+onready var char_force_per_second = char_force_max / (TIME_TO_TOP_WALKING_SPEED)
+# this is in kilograms, 1 godot unit = 1 cm
+export var CHAR_MASS = 100
+#SI UNITS: cms^ -2
+export var GRAVITY_HORIZONTAL = 980.665
+#this will be dependent on the tile
+#this will be removed
+
+#dependent on the location
+export var GROUND_FRICTION_COEFFICIENT = 0.9
+onready var ground_friction_force = GROUND_FRICTION_COEFFICIENT * CHAR_MASS * GRAVITY_HORIZONTAL
+
+#dependent on the character's state. ei airbourne, jordans got crinkled, etc. etc., amount of friction from ground that can be used
+#0.88 for average, 0.33 for EX when he is facing forward
+var character_traction = 1
+
+#will be implementing 
+export var AIR_DRAG_COEFFECIENT = 0.00001
+
+onready var air_resistance_force = 0 
+
+var velocity = Vector2.ZERO
+var acceleration = Vector2.ZERO
+var Ground_friction_force = Vector2.ZERO
+
 enum{
 	LOOKING,
 	AIMMING
@@ -33,12 +72,79 @@ func _ready():
 	camera.position.y = DEFAULT_CAMERA_Y_POSITION
 	pass 
 
+var input_vector = Vector2.ZERO
+var prevInput_vector = Vector2.ZERO
+var input_conflict = Vector2.ZERO
+var prevInput_conflict = Vector2.ZERO
+
+func _unhandled_input(event):
+	#put more of the things into here
+	#if Input.is_action_pressed("jump"):
+	#	place_state = AIRBOURNE
+	#if Input.is_action_just_released("jump"):
+	#	place_state = GROUNDED
+	wish_to_brake = false
+	input_vector.x = ceil(Input.get_action_strength("ui_right")) - ceil(Input.get_action_strength("ui_left"))
+	input_vector.y = ceil(Input.get_action_strength("ui_down")) - ceil(Input.get_action_strength("ui_up"))
+	
+	var input_sum = Vector2( ceil(Input.get_action_strength("ui_left")) + ceil(Input.get_action_strength("ui_right")) , ceil(Input.get_action_strength("ui_up")) + ceil(Input.get_action_strength("ui_down")) )
+	
+	# Check for when prevInput, and new button being pressed that caused the conflict 
+	if  input_sum.x  == 2:
+		input_conflict.x = 1
+		input_vector.x = -prevInput_vector.x
+		
+	elif input_sum.x == 1:
+		input_conflict.x = 0
+		if prevInput_vector.x != input_vector.x:
+			wish_to_brake = true
+		prevInput_vector.x = input_vector.x
+	
+
+	
+	if  input_sum.y  == 2:
+		input_conflict.y =  1
+		input_vector.y = -prevInput_vector.y
+		
+	elif input_sum.y == 1:
+		input_conflict.y = 0
+		if prevInput_vector.y != input_vector.y:
+			wish_to_brake = true
+		prevInput_vector.y = input_vector.y
+	
+	print(str(input_sum) +" "+  str(input_vector))
+	
+	#this is to prevent braking when the input conflict is resolved by releasing one of the respective inputs
+	if (input_conflict.x == 1 or input_conflict.y == 1) or (prevInput_conflict.x == 1 or prevInput_conflict.y == 1): 
+		wish_to_brake = false
+	
+	
+	
+	prevInput_conflict = input_conflict
+	
+	if Input.is_action_just_pressed("aim"):
+		cam_state = AIMMING
+		camera.smoothing_enabled = false
+	if Input.is_action_just_released("aim"):
+		aim_release()
+		camera.smoothing_enabled = true
+		cam_state = LOOKING
+	
+	match cam_state:
+		LOOKING:
+			look(event)
+		AIMMING:
+			aim(event)
+
+
+
+
 func _physics_process(delta):
 	velocity_magnitude = velocity.distance_to(Vector2.ZERO)
 	#will be optimizing this in the future so that certain codes only present under certain conditions
-	detect_brake_boost()
 	sudden_input_change()
-	inputvector()
+	detect_brake_boost()
+	
 	wishdir(input_vector)
 	upDown_physics(delta)
 	match place_state:
@@ -48,6 +154,7 @@ func _physics_process(delta):
 		AIRBOURNE:
 			character_traction = 0.001
 			air_move(delta)
+	
 
 #will be changing this in the future to have have gravity be consistent with character and game measurements
 export var JUMP_HEIGHT    = 80.0
@@ -57,7 +164,7 @@ onready var jump_velocity = (2*JUMP_HEIGHT) / JUMP_PEAK_TIME
 #this will be changed in the future to use value as actual gravity
 onready var GRAVITY       = (-2.0 *JUMP_HEIGHT) / (JUMP_PEAK_TIME * JUMP_PEAK_TIME)
 
-var wish_to_brake = true
+var wish_to_brake = false
 #move this to a lower position in the future
 var player_z_pos  = 0
 var player_height = 80
@@ -113,89 +220,35 @@ var can_gallop_jump = false
 func _on_JumpBuffer_timeout():
 	can_gallop_jump = false
 
-
-
-#SI UNITS: cm s^-1
-export var TOP_WALKING_SPEED = 420
-#SI UNITS: s
-export var TIME_TO_TOP_WALKING_SPEED = 0.2
-
-#still under development this one
-var top_gallop_speed_to_walking_ratio = 3.5
-var time_to_top_gallop_speed = 4
-
-var char_force = Vector2.ZERO
-#this will determine the char's max speed
-#SI UNITS: kg m s^-2 * 100cm m^-1
-onready var char_force_max = TOP_WALKING_SPEED * ((GRAVITY_HORIZONTAL * GROUND_FRICTION_COEFFICIENT) + (AIR_DRAG_COEFFECIENT * TOP_WALKING_SPEED * TOP_WALKING_SPEED))
-#SI UNITS: char_force_max s^-1
-onready var char_force_per_second = char_force_max / (TIME_TO_TOP_WALKING_SPEED)
-# this is in kilograms, 1 godot unit = 1 cm
-export var CHAR_MASS = 100
-#SI UNITS: cms^ -2
-export var GRAVITY_HORIZONTAL = 980.665
-#this will be dependent on the tile
-#this will be removed
-
-#dependent on the location
-export var GROUND_FRICTION_COEFFICIENT = 0.9
-onready var ground_friction_force = GROUND_FRICTION_COEFFICIENT * CHAR_MASS * GRAVITY_HORIZONTAL
-
-#dependent on the character's state. ei airbourne, jordans got crinkled, etc. etc., amount of friction from ground that can be used
-#0.88 for average, 0.33 for EX when he is facing forward
-var character_traction = 1
-
-#will be implementing 
-export var AIR_DRAG_COEFFECIENT = 0.00001
-
-onready var air_resistance_force = 0 
-
-var velocity = Vector2.ZERO
-var acceleration = Vector2.ZERO
-var Ground_friction_force = Vector2.ZERO
-
-#make this be impulse to be applied on the object being colllided with
-onready var horizontal_momentum = velocity * CHAR_MASS
-
 func move(delta):
-	#I should probably turn this into a function
 	if input_vector != Vector2.ZERO:
-		char_force = char_force.move_toward(char_force_max * wishDirection, char_force_per_second * delta) * sudden_input_change_factor
+		char_force *= sudden_input_change_factor
+		char_force = char_force.move_toward(char_force_max * wishDirection, char_force_per_second * delta)# * sudden_input_change_factor
+		
 	else:
 		char_force = Vector2.ZERO
 	
-	print(char_force)
-	
+	#This is temporary, will likely be replaced with something more convuluted and makes sense with the wind shit
 	air_resistance_force = AIR_DRAG_COEFFECIENT * velocity * velocity * velocity 
+	
 	Ground_friction_force = ground_friction_force * velocity * 0.01
 	acceleration = ((char_force * character_traction ) - Ground_friction_force - air_resistance_force)/ CHAR_MASS #my magnum opos
 	
-	
-	if can_brakeboost == true and wish_to_brake == true:
-		velocity = -(velocity * .2) + brake_boost_power
+#	#BRAKE BOOST
+	if can_brakeboost and wish_to_brake:
+		velocity = -(velocity * .2) + brake_boost_power + (acceleration * delta)
+		print("A")
 	else:
 		velocity += acceleration * delta
-	wish_to_brake = true
-	
-	
 	
 	
 	for i in get_slide_count():
 		var collision = get_slide_collision(i)
-		horizontal_momentum = velocity * CHAR_MASS
-#		print(str(prev_tick_velocity) +"aAAAA")
 		if collision.collider is MoveableBlock:
 			#have this set the char force temporarily to zero, but kill it all on the next frame
 			impulse = 2 * collision.collider.mass * (collision.collider.get_linear_velocity() - prev_tick_velocity) / (CHAR_MASS + collision.collider.mass)
-				
 			collision.collider.apply_impulse(position - (collisionshape.shape.radius * collision.normal) - collision.collider.position,  -impulse +(acceleration * CHAR_MASS * delta))
-			
-			
-			
 			# this is to reduce the impact of kinetic to rigid collision wherein the kinetic body just stops moving
-#			print (str(velocity) + "BBBB")
-			
-			
 #			velocity -= (collision.normal / collision.collider.mass)
 	
 	
@@ -253,47 +306,61 @@ func sudden_input_change():
 
 var brake_boost_power = Vector2.ZERO
 var can_brakeboost = false
-#% of velocity that player needs to be at before being able to gallop
-export var GALLOP_DETECT_FACTOR = 0.6
+#  % of velocity that player needs to be at before being able to gallop
+export var GALLOP_DETECT_FACTOR = 0.4
 
 func detect_brake_boost():
 	
 	# will be changed in the future to not use magnitude
 	if velocity_magnitude > (TOP_WALKING_SPEED * GALLOP_DETECT_FACTOR) and sudden_input_change_factor < 0.45:# this  number is the allowance of direction shift, higher number the more allowance, max of 1, will not be user adjustable value
+		# for allowance of direction shift 0 means opposite, 0.5 means left and right, 1 means forward
 		brake_boost_power = wishDirection * 800
 		can_gallop_jump = true
 		can_brakeboost = true
 		JumpBuffer.start()
 	else:
-		can_brakeboost = false
+		can_brakeboost = false 
 
-var input_vector = Vector2.ZERO
-var prevInput_vector = Vector2.ZERO
 
-func inputvector():
-	input_vector = Vector2.ZERO
-	x_input()
-	y_input()
-	# this is a way for players to be able to switch directions without activating brake boost
-	# Checks when there is a conflict, when a and d are pressed at the same time, input_vector(0,0)
-	# all good now, only prob is with releasing which could be use to make galloping easier but eh
-
-func x_input():
-	input_vector.x = (Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left"))
-	# Check for when prevInput, and new button being pressed that caused the conflict 
-	if prevInput_vector.x != 0 and Input.get_action_strength("ui_left") + Input.get_action_strength("ui_right") == 2:
-		wish_to_brake = false
-		input_vector.x = -prevInput_vector.x
-	else:
-		prevInput_vector.x = input_vector.x
-
-func y_input():
-	input_vector.y = (Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up"))
-	if prevInput_vector.y != 0 and Input.get_action_strength("ui_up") + Input.get_action_strength("ui_down") == 2:
-		wish_to_brake = false
-		input_vector.y = -prevInput_vector.y
-	else:
-		prevInput_vector.y = input_vector.y
+#func inputvector():
+#	#perhaps ill have to move this into _unhandled input but im too tired for now so ill do that tommorow lol
+#	input_vector = Vector2.ZERO
+#
+#	x_input()
+#	y_input()
+##	print(input_vector) #PLEASE TEST THIS! I am unsure about how it works my keyboard does not allow for more that 3 inputs at once
+#
+#	# this is a way for players to be able to switch directions without activating brake boost
+#	# Checks when there is a conflict, when a and d are pressed at the same time, input_vector(0,0)
+#	# all good now, only prob is with releasing which could be use to make galloping easier but eh
+#
+#func x_input():
+#	input_vector.x = (ceil(Input.get_action_strength("ui_right")) - ceil(Input.get_action_strength("ui_left")))
+#	# Check for when prevInput, and new button being pressed that caused the conflict 
+#	if prevInput_vector.x != 0 and ceil(Input.get_action_strength("ui_left")) + ceil(Input.get_action_strength("ui_right")) == 2:
+#		input_conflict.x = 1
+#		wish_to_brake = false
+#
+#		input_vector.x = -prevInput_vector.x
+#	else:
+#		input_conflict.x = 0
+#		prevInput_vector.x = input_vector.x
+#
+#
+#
+#func y_input():
+#	input_vector.y = (ceil(Input.get_action_strength("ui_down"))- ceil(Input.get_action_strength("ui_up")))
+#
+#	if prevInput_vector.y != 0 and ceil(Input.get_action_strength("ui_up")) + ceil(Input.get_action_strength("ui_down")) == 2:
+#		input_conflict.y =  1
+#		wish_to_brake = false
+#		input_vector.y = -prevInput_vector.y
+#	else:
+#		input_conflict.y = 0
+#		prevInput_vector.y = input_vector.y
+#
+#
+#
 
 var  wishDirection = Vector2.ZERO
 
@@ -308,13 +375,15 @@ func look(event):
 		rotation += event.relative.x * 0.002 #this float is meant to represent sensitivity, prob make a value for that in tha future
 		player_selected_zoom += Vector2(1,1) * ( (0.002 * (-event.relative.y)))# zoom in an out based on up down movement of mouse
 
+var aim_change = Vector2.ZERO
 func aim(event):
 	#note aim only rotates the sprite, not the player, so keep that in mind
 	#has a bug where if the camera is centered on a rich text label, it stops moving
-	
+
 	get_node("Sprite").look_at(camera.global_position)
 	get_node("Sprite").rotation += PI/2
 	if event is InputEventMouseMotion:
+#		aim_change += Vector2(1,1) * ( (0.002 * (-event.relative.y)))
 		#this is how aimming is handled
 		camera.position += event.relative * 0.5
 
@@ -323,27 +392,7 @@ func aim_release():
 	#enable this line vvv of code to make the camera return with the same rotation as sprite 
 	rotation = get_node("Sprite").global_rotation
 	get_node("Sprite").rotation = 0
-	
+#	player_selected_zoom += aim_change
+#	aim_change = Vector2.ZERO
 	#make camera return to normal
 
-func _unhandled_input(event):
-	#put more of the things into here
-	#if Input.is_action_pressed("jump"):
-	#	place_state = AIRBOURNE
-	#if Input.is_action_just_released("jump"):
-	#	place_state = GROUNDED
-	
-	if Input.is_action_just_pressed("aim"):
-		cam_state = AIMMING
-		camera.smoothing_enabled = false
-	if Input.is_action_just_released("aim"):
-		aim_release()
-		camera.smoothing_enabled = true
-		cam_state = LOOKING
-	
-	match cam_state:
-		LOOKING:
-			look(event)
-		AIMMING:
-			aim(event)
-		
