@@ -17,7 +17,6 @@ texture = ExtResource( 1 )
 shape = SubResource( 1 )
 
 [node name="Label" type="Label" parent="."]
-visible = false
 margin_left = 67.0
 margin_top = -61.0
 margin_right = 235.0
@@ -46,6 +45,9 @@ process_mode = 0
 wait_time = 0.2
 one_shot = true
 
-[node name="Timer2" type="Timer" parent="Node2D"]
+[node name="JumpQueue" type="Timer" parent="Node2D"]
+wait_time = 0.2
+one_shot = true
 
 [connection signal="timeout" from="Node2D/JumpBuffer" to="." method="_on_JumpBuffer_timeout"]
+[connection signal="timeout" from="Node2D/JumpQueue" to="." method="_on_JumpQueue_timeout"]

@@ -76,26 +76,36 @@ var input_vector = Vector2.ZERO
 var prevInput_vector = Vector2.ZERO
 var input_conflict = Vector2.ZERO
 var prevInput_conflict = Vector2.ZERO
+var brake_jump_queue = false
+
 
 func _unhandled_input(event):
-	#put more of the things into here
-	#if Input.is_action_pressed("jump"):
-	#	place_state = AIRBOURNE
-	#if Input.is_action_just_released("jump"):
-	#	place_state = GROUNDED
 	
-	#maybe make it so that jumping dependent on current velocity? the faster the player currently is the lower their jump??
-	# i dunno, seems kinda counter intuitive, but its the only hope for galloping to exist lol
-	# currently jumping feels too short and quick, which works for galloping, but not for normal jumping
-	# detect when player is brakedash, to perform a gallopjump, default jump always the same no matter what speed
-	# add a bit of delay when brake dash
 	if Input.is_action_just_pressed("jump") and place_state == GROUNDED:
-		
-		if can_gallop_jump == false:
-			z_velocity = jump_velocity 
+		# currently bugged, since these parameters are dependent on the player's input rather than where they are facing,
+		# they can do both gallop jump and normal jump if they look towards the opposite of their velocity, jump queue while holding forward
+		if !can_gallop_jump:
+			z_velocity = jump_velocity
+		else:
+			brake_jump_queue = true
+		# adds jump queueing to when you dashbrake, and press jump, the next dash brake will instantly make you jump? seems like a good way to make the tech consistent.
+		# make it so that if a jump queue is called, and a brake dash is to happen upon landing, cancel gallop and just convert it into a brake_jump_queue
+		# This is to remove the times when a backward gallop happens instead of a normal brake dash as intended
 	
-	if Input.is_action_just_released("jump") and can_gallop_jump == true and place_state == GROUNDED:
-		z_velocity = jump_velocity * 0.5
+	if Input.is_action_just_pressed("jump") and place_state == AIRBOURNE:
+		jump_queue = true
+		JumpQueue.start()
+		
+		#add jumpqueuing here
+		# maybe add jump queueing to when you dashbrake, and press jump, the next dash brake will instantly make you jump? seems like a good way to make the tech consistent.
+		return 
+	
+	if Input.is_action_just_released("jump"):
+		
+		brake_jump_queue = false
+		#this will be  potentially be abused during a pause, where the player will release their keyboard input to avoid this, better watch out
+		if can_gallop_jump == true and place_state == GROUNDED:
+			z_velocity = jump_velocity * 0.5
 	
 	
 	wish_to_brake = false
@@ -106,6 +116,7 @@ func _unhandled_input(event):
 	
 	# Check for when prevInput, and new button being pressed that caused the conflict 
 	if  input_sum.x  == 2:
+		#make: Remove checks prev conflict when in mid air to make galloping consistent again
 		input_conflict.x = 1
 		input_vector.x = -prevInput_vector.x
 		
@@ -115,7 +126,6 @@ func _unhandled_input(event):
 			wish_to_brake = true
 		prevInput_vector.x = input_vector.x
 	
-
 	
 	if  input_sum.y  == 2:
 		input_conflict.y =  1
@@ -126,8 +136,6 @@ func _unhandled_input(event):
 		if prevInput_vector.y != input_vector.y:
 			wish_to_brake = true
 		prevInput_vector.y = input_vector.y
-	
-	print(input_vector)
 	
 	
 	
@@ -153,7 +161,7 @@ func _physics_process(delta):
 	#will be optimizing this in the future so that certain codes only present under certain conditions
 	sudden_input_change()
 	detect_brake_boost()
-	
+	label.text = str(velocity_magnitude)
 	wishdir(input_vector)
 	upDown_physics(delta)
 	match place_state:
@@ -184,6 +192,7 @@ var z_acceleration = 0
 var jump_force     = 0
 var step_size      = 20 
 onready var JumpBuffer = get_node("Node2D/JumpBuffer")
+onready var JumpQueue = get_node("Node2D/JumpQueue")
 
 func upDown_physics(delta):
 #	#air friction already handled in Match place_state
@@ -200,13 +209,14 @@ func upDown_physics(delta):
 	
 	if place_state == GROUNDED:
 		z_velocity = 0
-	
+		if jump_queue and (!can_brakeboost and !wish_to_brake):
+			z_velocity = jump_velocity
 	
 	
 	# this will have to be done in a dif place, deffo
 	# maybe it should be based more on player sprite rather than player_z_pos
-	get_node("Sprite").scale = Vector2(1,1) * (1+ (0.005 * (player_z_pos))) # have this min to zero in the future, for falling fx
-	camera.zoom = player_selected_zoom * (1+ (0.005 * (player_z_pos))) # have this move up down to make sure that player is always same pos relative to camera
+	get_node("Sprite").scale = Vector2(1,1) * (1 + (0.005 * (player_z_pos))) # have this min to zero in the future, for falling fx
+	camera.zoom = player_selected_zoom * (1 + (0.005 * (player_z_pos))) # have this move up down to make sure that player is always same pos relative to camera
 	crossHair.scale = camera.zoom * DEFAULT_CROSSHAIR_SCALE
 	if cam_state != AIMMING:
 		camera.position.y = camera.zoom.y * DEFAULT_CAMERA_Y_POSITION
@@ -216,9 +226,12 @@ func upDown_physics(delta):
 var can_gallop_jump = false
 
 func _on_JumpBuffer_timeout():
+	brake_jump_queue = false
 	can_gallop_jump = false
 
-
+var jump_queue = false
+func _on_JumpQueue_timeout():
+	jump_queue = false
 
 func move(delta):
 	if input_vector != Vector2.ZERO:
@@ -233,11 +246,14 @@ func move(delta):
 	
 	Ground_friction_force = ground_friction_force * velocity * 0.01
 	acceleration = ((char_force * character_traction ) - Ground_friction_force - air_resistance_force)/ CHAR_MASS #my magnum opos
-	
 #	#BRAKE BOOST
 	if can_brakeboost and wish_to_brake:
-		velocity = -(velocity * .2) + brake_boost_power + (acceleration * delta)
-		print( "A")
+		velocity = -(velocity * 0.95 +  (acceleration * delta) - brake_boost_power)# 
+		can_gallop_jump = true
+		JumpBuffer.start()
+		if brake_jump_queue == true:
+			z_velocity = jump_velocity * 0.5
+			brake_jump_queue = false
 	else:
 		velocity += acceleration * delta
 	
@@ -302,6 +318,7 @@ func sudden_input_change():
 		
 		#this is used to reset the char_force back to zero depending on how different the input is from the current velocity
 		# currently not working
+		
 		sudden_input_change_factor = (velocity.normalized().dot(wishDirection) + 1) * 0.5
 		
 	else:
@@ -315,57 +332,15 @@ export var GALLOP_DETECT_FACTOR = 0.4
 
 
 func detect_brake_boost():
-	
+	# this might also detect future sudden changes in velocity like getting hit as a brake boost, better fix this.
 	# will be changed in the future to not use magnitude
 	if velocity_magnitude > (TOP_WALKING_SPEED * GALLOP_DETECT_FACTOR) and sudden_input_change_factor < 0.45:# this  number is the allowance of direction shift, higher number the more allowance, max of 1, will not be user adjustable value
 		# for allowance of direction shift 0 means opposite, 0.5 means left and right, 1 means forward
 		brake_boost_power = wishDirection * 800
-		can_gallop_jump = true
 		can_brakeboost = true
-		JumpBuffer.start()
+		
 	else:
 		can_brakeboost = false 
-
-
-#func inputvector():
-#	#perhaps ill have to move this into _unhandled input but im too tired for now so ill do that tommorow lol
-#	input_vector = Vector2.ZERO
-#
-#	x_input()
-#	y_input()
-##	print(input_vector) #PLEASE TEST THIS! I am unsure about how it works my keyboard does not allow for more that 3 inputs at once
-#
-#	# this is a way for players to be able to switch directions without activating brake boost
-#	# Checks when there is a conflict, when a and d are pressed at the same time, input_vector(0,0)
-#	# all good now, only prob is with releasing which could be use to make galloping easier but eh
-#
-#func x_input():
-#	input_vector.x = (ceil(Input.get_action_strength("ui_right")) - ceil(Input.get_action_strength("ui_left")))
-#	# Check for when prevInput, and new button being pressed that caused the conflict 
-#	if prevInput_vector.x != 0 and ceil(Input.get_action_strength("ui_left")) + ceil(Input.get_action_strength("ui_right")) == 2:
-#		input_conflict.x = 1
-#		wish_to_brake = false
-#
-#		input_vector.x = -prevInput_vector.x
-#	else:
-#		input_conflict.x = 0
-#		prevInput_vector.x = input_vector.x
-#
-#
-#
-#func y_input():
-#	input_vector.y = (ceil(Input.get_action_strength("ui_down"))- ceil(Input.get_action_strength("ui_up")))
-#
-#	if prevInput_vector.y != 0 and ceil(Input.get_action_strength("ui_up")) + ceil(Input.get_action_strength("ui_down")) == 2:
-#		input_conflict.y =  1
-#		wish_to_brake = false
-#		input_vector.y = -prevInput_vector.y
-#	else:
-#		input_conflict.y = 0
-#		prevInput_vector.y = input_vector.y
-#
-#
-#
 
 var  wishDirection = Vector2.ZERO
 
@@ -400,4 +375,7 @@ func aim_release():
 #	player_selected_zoom += aim_change
 #	aim_change = Vector2.ZERO
 	#make camera return to normal
+
+
+
 
